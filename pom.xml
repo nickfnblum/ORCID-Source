@@ -37,7 +37,7 @@ the software.
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <servlet.port>9437</servlet.port>
         <ajp.port>9438</ajp.port>
-        <aws.version>1.12.261</aws.version>
+        <aws.version>1.12.606</aws.version>
         <solr.version>8.0.0</solr.version>
         <junit.version>4.13.2</junit.version>
         <main.basedir>${project.basedir}</main.basedir>
@@ -163,7 +163,7 @@ the software.
                 <artifactId>maven-resources-plugin</artifactId>
                 <configuration>
                     <escapeString>\</escapeString>
-                    <outputDirectory />
+                    <outputDirectory/>
                 </configuration>
             </plugin>
             <plugin>
