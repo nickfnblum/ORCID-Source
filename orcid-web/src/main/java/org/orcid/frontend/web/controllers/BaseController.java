@@ -41,7 +41,6 @@ import org.orcid.core.manager.v3.read_only.ProfileKeywordManagerReadOnly;
 import org.orcid.core.manager.v3.read_only.ResearcherUrlManagerReadOnly;
 import org.orcid.core.oauth.OrcidProfileUserDetails;
 import org.orcid.core.togglz.Features;
-import org.orcid.core.utils.OrcidStringUtils;
 import org.orcid.core.utils.ReleaseNameUtils;
 import org.orcid.frontend.web.forms.validate.OrcidUrlValidator;
 import org.orcid.frontend.web.forms.validate.RedirectUriValidator;
@@ -74,6 +73,7 @@ import org.orcid.pojo.ajaxForm.Registration;
 import org.orcid.pojo.ajaxForm.Text;
 import org.orcid.pojo.ajaxForm.Visibility;
 import org.orcid.pojo.ajaxForm.VisibilityForm;
+import org.orcid.utils.OrcidStringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -739,10 +739,7 @@ public class BaseController {
                 } else if(profileEntityManager.isProfileClaimedByEmail(emailValue)) {                                                                        
                     email.getErrors().add("orcid.frontend.verify.duplicate_email");
                 } else if(!emailManager.isAutoDeprecateEnableForEmail(emailValue)) {
-                    //If the email is not eligible for auto deprecate, we should show an email duplicated exception                        
-                    String resendUrl = createResendClaimUrl(emailValue, request);
-                    String message = getVerifyUnclaimedMessage(emailValue, resendUrl);
-                    email.getErrors().add(message);                                    
+                    email.getErrors().add("orcid.frontend.verify.unclaimed_email");                                    
                 } else {
                     LOGGER.info("Email " + emailValue + " belongs to a unclaimed record and can be auto deprecated");
                 }
@@ -918,11 +915,7 @@ public class BaseController {
             publicEmails = emailManagerReadOnly.getEmails(orcid);
         }   
         Emails filteredEmails = new Emails();
-        if (Features.HIDE_UNVERIFIED_EMAILS.isActive()) {
-            filteredEmails.setEmails(new ArrayList<Email>(publicEmails.getEmails().stream().filter(e -> e.isVerified()).collect(Collectors.toList())));
-        } else {
-            filteredEmails.setEmails(new ArrayList<Email>(publicEmails.getEmails()));
-        } 
+        filteredEmails.setEmails(new ArrayList<Email>(publicEmails.getEmails().stream().filter(e -> e.isVerified()).collect(Collectors.toList())));
         
         Map<String, List<org.orcid.jaxb.model.v3.release.record.Email>> groupedEmails = groupEmails(filteredEmails);
         publicRecordPersonDetails.setPublicGroupedEmails(groupedEmails);

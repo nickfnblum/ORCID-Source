@@ -58,9 +58,11 @@ public class ExternalIdentifiersSummary {
     public static List<ExternalIdentifiersSummary> valueOf(PersonExternalIdentifiers personExternalIdentifiers, String orcid) {
         List<ExternalIdentifiersSummary> externalIdentifiersSummaryList = new ArrayList<>();
 
-        personExternalIdentifiers.getExternalIdentifiers().forEach(personExternalIdentifier -> {
-            externalIdentifiersSummaryList.add(ExternalIdentifiersSummary.valueOf(personExternalIdentifier, orcid));
-        });
+        if(personExternalIdentifiers != null) {
+            personExternalIdentifiers.getExternalIdentifiers().forEach(personExternalIdentifier -> {
+                externalIdentifiersSummaryList.add(ExternalIdentifiersSummary.valueOf(personExternalIdentifier, orcid));
+            });
+        }
 
         return externalIdentifiersSummaryList;
     }
@@ -86,7 +88,7 @@ public class ExternalIdentifiersSummary {
             }
 
             if (personExternalIdentifier.getSource() != null) {
-                form.setValidated(SourceUtils.isSelfAsserted(personExternalIdentifier.getSource(), orcid));
+                form.setValidated(!SourceUtils.isSelfAsserted(personExternalIdentifier.getSource(), orcid));
             }
         }
         return form;

@@ -32,9 +32,9 @@ public class OrgDataClient {
      */
     public <T> T get(String url, String userAgent, Class<T> type) {
         JerseyClientResponse<T, String> response = jerseyClientHelperForOrgLoaders.executeGetRequest(url, null, null, false, Map.of(), Map.of("User-Agent", userAgent), type, String.class);
-        int status = response.getStatus();
+        int status = response.getStatus();      
         if (status != 200) {
-            LOGGER.warn("Unable to fetch file {}: {}", new Object[] { url, status });
+            LOGGER.error("Unable to fetch file {}: {}", new Object[] { url, status });
             return null;
         }
         return response.getEntity();
@@ -47,6 +47,7 @@ public class OrgDataClient {
      * @return boolean indicator of success
      */
     public boolean downloadFile(String url, String userAgent, String localFilePath) {
+        LOGGER.info("About to download file {}", url);
         JerseyClientResponse<InputStream, String> response = jerseyClientHelperForOrgLoaders.executeGetRequest(url, null, null, false, Map.of(), Map.of("User-Agent", userAgent), InputStream.class, String.class);
         int status = response.getStatus();
         if (status != 200) {

@@ -33,7 +33,7 @@ import org.orcid.jaxb.model.v3.release.record.summary.MembershipSummary;
 import org.orcid.jaxb.model.v3.release.record.summary.QualificationSummary;
 import org.orcid.jaxb.model.v3.release.record.summary.ServiceSummary;
 import org.orcid.pojo.OrgDisambiguatedExternalIdentifiers;
-import org.orcid.core.utils.OrcidStringUtils;
+import org.orcid.utils.OrcidStringUtils;
 
 public class AffiliationForm extends VisibilityForm implements ErrorsInterface, Serializable {
 
@@ -192,8 +192,9 @@ public class AffiliationForm extends VisibilityForm implements ErrorsInterface, 
             form.setAffiliationExternalIdentifiers(affiliationExternalIdentifiers);
         }
 
-        // Set empty url field
-        form.setUrl(new Text());
+        if(summary.getUrl() != null && summary.getUrl().getValue() != null) {
+            form.setUrl(Text.valueOf(summary.getUrl().getValue()));
+        }
         
         form.setCreatedDate(Date.valueOf(summary.getCreatedDate()));
         form.setLastModified(Date.valueOf(summary.getLastModifiedDate()));

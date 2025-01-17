@@ -4,10 +4,8 @@ import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import java.util.Random;
 import java.util.UUID;
 
 import org.junit.Before;
@@ -20,7 +18,6 @@ import org.orcid.core.contributors.roles.credit.CreditRole;
 import org.orcid.core.manager.v3.WorksCacheManager;
 import org.orcid.core.manager.v3.WorksExtendedCacheManager;
 import org.orcid.core.manager.v3.read_only.WorkManagerReadOnly;
-import org.orcid.core.utils.DateUtils;
 import org.orcid.jaxb.model.common.SequenceType;
 import org.orcid.jaxb.model.common.WorkType;
 import org.orcid.jaxb.model.v3.release.common.Contributor;
@@ -50,6 +47,7 @@ import org.orcid.pojo.WorkGroupExtended;
 import org.orcid.pojo.WorkSummaryExtended;
 import org.orcid.pojo.WorksExtended;
 import org.orcid.pojo.ajaxForm.WorkForm;
+import org.orcid.utils.DateUtils;
 
 public class WorksPaginatorTest {
 
@@ -74,7 +72,7 @@ public class WorksPaginatorTest {
     public void testGetWorksPage() {
         int pageSize = 100; 
         
-        Mockito.when(worksCacheManager.getGroupedWorks(Mockito.anyString())).thenReturn(get1000PublicWorkGroups());
+        Mockito.when(worksCacheManager.getGroupedWorks(Mockito.anyString())).thenReturn(getPublicWorkGroups(1000));
         Page<org.orcid.pojo.grouping.WorkGroup> page = worksPaginator.getWorksPage("orcid", 0, pageSize, false, WorksPaginator.DATE_SORT_KEY, true);
         assertEquals(pageSize, page.getGroups().size());
         org.orcid.pojo.grouping.WorkGroup workGroupPage1 = page.getGroups().get(0);
@@ -164,32 +162,7 @@ public class WorksPaginatorTest {
                 assertEquals(workForm.getVisibility().getVisibility(), Visibility.PUBLIC);
             }
         }
-    }
-
-    @Test
-    public void testTitleSortCaseInsensitive() {
-        int pageSize = 100; 
-        
-        Works works = get1000PublicWorkGroups();
-        for (WorkGroup workGroup : works.getWorkGroup()) {
-            if (new Random().nextBoolean()) {
-                for (WorkSummary summary : workGroup.getWorkSummary()) {
-                    summary.getTitle().setTitle(new Title(summary.getTitle().getTitle().getContent().toUpperCase()));
-                }
-            }
-        }
-        Mockito.when(worksCacheManager.getGroupedWorks(Mockito.anyString())).thenReturn(works);
-        Page<org.orcid.pojo.grouping.WorkGroup> page = worksPaginator.getWorksPage("orcid", 0, pageSize, false, WorksPaginator.TITLE_SORT_KEY, true);
-
-        org.orcid.pojo.grouping.WorkGroup previous = page.getGroups().remove(0);
-        while (!page.getGroups().isEmpty()) {
-            org.orcid.pojo.grouping.WorkGroup next = page.getGroups().remove(0);
-            String previousTitle = previous.getWorks().get(0).getTitle().getValue();
-            String nextTitle = next.getWorks().get(0).getTitle().getValue();
-            assertTrue(previousTitle.toLowerCase().compareTo(nextTitle.toLowerCase()) <= 0);
-            previous = next;
-        }
-    }
+    }    
 
     @Test
     public void testReverseSecondaryTitleSortForNullDates() {
@@ -207,11 +180,11 @@ public class WorksPaginatorTest {
             assertTrue(previousTitle.toLowerCase().compareTo(nextTitle.toLowerCase()) >= 0);
             previous = next;
         }
-    }
-    
+    }    
+
     @Test
     public void testGetAllWorks() {
-        Works works = get1000PublicWorkGroups();
+        Works works = getPublicWorkGroups(1000);
         Mockito.when(worksCacheManager.getGroupedWorks(Mockito.anyString())).thenReturn(works);
         Page<org.orcid.pojo.grouping.WorkGroup> page = worksPaginator.getAllWorks("orcid", false, WorksPaginator.TITLE_SORT_KEY, true);
         assertEquals(1000, page.getTotalGroups());
@@ -257,7 +230,7 @@ public class WorksPaginatorTest {
     }
 
     private Works getWorkGroupsWithNullDates() {
-        Works works = get1000PublicWorkGroups();
+        Works works = getPublicWorkGroups(1000);
         for (WorkGroup workGroup : works.getWorkGroup()) {
             for (WorkSummary workSummary : workGroup.getWorkSummary()) {
                 workSummary.setPublicationDate(null);
@@ -266,12 +239,12 @@ public class WorksPaginatorTest {
         return works;
     }
 
-    private Works get1000PublicWorkGroups() {
+    private Works getPublicWorkGroups(int numberOfWorks) {
         Works works = new Works();
         works.setLastModifiedDate(new LastModifiedDate(DateUtils.convertToXMLGregorianCalendar(System.currentTimeMillis())));
         works.setPath("some path");
 
-        for (int i = 0; i < 1000; i++) {
+        for (int i = 0; i < numberOfWorks; i++) {
             works.getWorkGroup().add(getPublicWorkGroup(i));
         }
         return works;

@@ -47,7 +47,7 @@ public class PersonDetailsManagerTest extends DBUnitTest {
     
     @Test
     public void testGetPersonDetails() {
-        Person person = personDetailsManager.getPersonDetails(ORCID, !Features.HIDE_UNVERIFIED_EMAILS.isActive());
+        Person person = personDetailsManager.getPersonDetails(ORCID, false);
         assertNotNull(person);
         
         assertNotNull(person.getExternalIdentifiers());
@@ -72,16 +72,11 @@ public class PersonDetailsManagerTest extends DBUnitTest {
         
         assertNotNull(person.getEmails());
         assertNotNull(person.getEmails().getEmails());
-        
-        if (Features.HIDE_UNVERIFIED_EMAILS.isActive()) {
-            assertEquals(4, person.getEmails().getEmails().size());
-    
-            for (Email email : person.getEmails().getEmails()) {
-                assertTrue(email.isVerified());
-            }
-        } else {
-            assertEquals(5, person.getEmails().getEmails().size());
-        }
+        assertEquals(5, person.getEmails().getEmails().size());
+
+        for (Email email : person.getEmails().getEmails()) {
+            assertTrue(email.isVerified());
+        }        
         
         assertNotNull(person.getBiography());
         assertEquals(Visibility.PUBLIC, person.getBiography().getVisibility());
@@ -104,7 +99,7 @@ public class PersonDetailsManagerTest extends DBUnitTest {
         
         assertNotNull(person.getEmails());
         assertNotNull(person.getEmails().getEmails());
-        assertEquals(5, person.getEmails().getEmails().size());
+        assertEquals(6, person.getEmails().getEmails().size());
     }
 
     @Test
@@ -141,8 +136,9 @@ public class PersonDetailsManagerTest extends DBUnitTest {
         
         assertNotNull(person.getEmails());
         assertNotNull(person.getEmails().getEmails());
-        assertEquals(1, person.getEmails().getEmails().size());
+        assertEquals(2, person.getEmails().getEmails().size());
         assertEquals("public_0000-0000-0000-0003@test.orcid.org", person.getEmails().getEmails().get(0).getEmail());
+        assertEquals("public_0000-0000-0000-0003@orcid.org", person.getEmails().getEmails().get(1).getEmail());
         
         assertNotNull(person.getBiography());
         assertEquals(Visibility.PUBLIC, person.getBiography().getVisibility());

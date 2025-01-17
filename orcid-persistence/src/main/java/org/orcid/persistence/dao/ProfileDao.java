@@ -5,6 +5,8 @@ import java.util.Date;
 import java.util.List;
 
 import org.apache.commons.lang3.tuple.Pair;
+import org.apache.commons.lang3.tuple.Triple;
+import org.orcid.persistence.jpa.entities.EmailEventType;
 import org.orcid.persistence.jpa.entities.IndexingStatus;
 import org.orcid.persistence.jpa.entities.OrcidGrantedAuthority;
 import org.orcid.persistence.jpa.entities.ProfileEntity;
@@ -75,7 +77,7 @@ public interface ProfileDao extends GenericDao<ProfileEntity, String> {
 
     void updateLastModifiedDateAndIndexingStatusWithoutResult(String orcid, Date lastModified, IndexingStatus indexingStatus);
 
-    public List<Pair<String, Date>> findEmailsUnverfiedDays(int daysUnverified, int maxResults);
+    public List<Triple<String, String, Boolean>> findEmailsUnverfiedDays(int daysUnverified, EmailEventType eventSent);
 
     String retrieveOrcidType(String orcid);
 
@@ -155,8 +157,12 @@ public interface ProfileDao extends GenericDao<ProfileEntity, String> {
     public List<Object[]> getSigninLock(String orcid);
 
     public void startSigninLock(String orcid);
-    
+
     public void resetSigninLock(String orcid);
 
     public void updateSigninLock(String orcid, Integer count);
+
+    boolean haveMemberPushedWorksOrAffiliationsToRecord(String orcid, String clientId);
+
+    public List<Pair<String, String>> findEmailsToSendAddWorksEmail(int profileCreatedNumberOfDaysAgo);
 }

@@ -13,7 +13,6 @@ import org.junit.AfterClass;
 import org.junit.BeforeClass;
 import org.junit.Test;
 import org.junit.runner.RunWith;
-import org.orcid.core.togglz.Features;
 import org.orcid.jaxb.model.v3.release.common.Visibility;
 import org.orcid.jaxb.model.v3.release.record.Person;
 import org.orcid.jaxb.model.v3.release.record.Record;
@@ -77,11 +76,7 @@ public class RecordManagerTest extends DBUnitTest {
         assertNotNull(person.getEmails());
         assertNotNull(person.getEmails().getEmails());
         
-        if (Features.HIDE_UNVERIFIED_EMAILS.isActive()) {
-            assertEquals(4, person.getEmails().getEmails().size());
-        } else {
-            assertEquals(5, person.getEmails().getEmails().size());
-        }
+        assertEquals(5, person.getEmails().getEmails().size());
         
         assertNotNull(person.getBiography());
         assertEquals(Visibility.PUBLIC, person.getBiography().getVisibility());
@@ -179,8 +174,9 @@ public class RecordManagerTest extends DBUnitTest {
         
         assertNotNull(person.getEmails());
         assertNotNull(person.getEmails().getEmails());
-        assertEquals(1, person.getEmails().getEmails().size());
+        assertEquals(2, person.getEmails().getEmails().size());
         assertEquals("public_0000-0000-0000-0003@test.orcid.org", person.getEmails().getEmails().get(0).getEmail());
+        assertEquals("public_0000-0000-0000-0003@orcid.org", person.getEmails().getEmails().get(1).getEmail());
         
         assertNotNull(person.getBiography());
         assertEquals(Visibility.PUBLIC, person.getBiography().getVisibility());

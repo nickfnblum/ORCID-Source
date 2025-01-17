@@ -24,8 +24,8 @@ import org.orcid.core.manager.v3.NotificationManager;
 import org.orcid.core.manager.v3.ProfileEntityManager;
 import org.orcid.core.manager.v3.SpamManager;
 import org.orcid.core.manager.v3.read_only.RecordNameManagerReadOnly;
-import org.orcid.core.togglz.Features;
-import org.orcid.core.utils.OrcidStringUtils;
+import org.orcid.frontend.email.RecordEmailSender;
+import org.orcid.frontend.web.util.PasswordConstants;
 import org.orcid.jaxb.model.clientgroup.ClientType;
 import org.orcid.jaxb.model.clientgroup.MemberType;
 import org.orcid.jaxb.model.common.OrcidType;
@@ -33,8 +33,6 @@ import org.orcid.jaxb.model.v3.release.common.Visibility;
 import org.orcid.jaxb.model.v3.release.record.Email;
 import org.orcid.jaxb.model.v3.release.record.Emails;
 import org.orcid.jaxb.model.v3.release.record.Name;
-import org.orcid.frontend.email.RecordEmailSender;
-import org.orcid.frontend.web.util.PasswordConstants;
 import org.orcid.persistence.jpa.entities.ClientDetailsEntity;
 import org.orcid.persistence.jpa.entities.ProfileEntity;
 import org.orcid.pojo.AdminChangePassword;
@@ -44,6 +42,7 @@ import org.orcid.pojo.LockAccounts;
 import org.orcid.pojo.ProfileDeprecationRequest;
 import org.orcid.pojo.ProfileDetails;
 import org.orcid.pojo.ajaxForm.PojoUtil;
+import org.orcid.utils.OrcidStringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Controller;
@@ -95,6 +94,7 @@ public class AdminController extends BaseController {
     private static final String DEACTIVATED = "(deactivated)";
     private static final String DEPRECATED = "(deprecated)";
     private static final String UNCLAIMED = "(unclaimed)";
+    private static final String ENABLED_2FA = "2FAEnabled";
     private static final String INP_STRING_SEPARATOR = " \n\r\t,";
     private static final String OUT_EMAIL_PRIMARY = "*";
     private static final String OUT_STRING_SEPARATOR = "		";
@@ -332,7 +332,8 @@ public class AdminController extends BaseController {
             // Notify any new email address
             if (!emailsToNotify.isEmpty()) {
                 for (String emailToNotify : emailsToNotify) {
-                    recordEmailSender.sendVerificationEmail(orcid, emailToNotify);
+                    boolean isPrimaryEmail = emailManager.isPrimaryEmail(orcid, emailToNotify);
+                    recordEmailSender.sendVerificationEmail(orcid, emailToNotify, isPrimaryEmail);
                 }
             }
             profileDetails.setStatus(getMessage("admin.success"));
@@ -438,6 +439,11 @@ public class AdminController extends BaseController {
                             if (recordName.getCreditName() != null && !PojoUtil.isEmpty(recordName.getCreditName().getContent())) {
                                 builder.append("(").append(recordName.getCreditName().getContent()).append(")");
                             }
+                        }
+
+                        boolean twoFactorAuthenticationEnabled = twoFactorAuthenticationManager.userUsing2FA(orcid);
+                        if (twoFactorAuthenticationEnabled) {
+                            builder.append(OUT_STRING_SEPARATOR).append(ENABLED_2FA);
                         }
 
                     } else {
@@ -1060,9 +1066,6 @@ public class AdminController extends BaseController {
     @RequestMapping(value = "/validate-client-conversion.json", method = RequestMethod.POST)
     public @ResponseBody ConvertClient validateClientConversion(HttpServletRequest serverRequest, HttpServletResponse response, @RequestBody ConvertClient data)
             throws IllegalAccessException {
-        if (!Features.UPGRADE_PUBLIC_CLIENT.isActive() && !Features.MOVE_CLIENT.isActive()) {
-            throw new IllegalAccessException("Feature UPGRADE_PUBLIC_CLIENT is disabled");
-        }
         data.setGroupIdNotFound(false);
         data.setGroupIdDeactivated(false);
         data.setClientNotFound(false);
@@ -1117,11 +1120,7 @@ public class AdminController extends BaseController {
 
     @RequestMapping(value = "/convert-client.json", method = RequestMethod.POST)
     public @ResponseBody ConvertClient convertClient(HttpServletRequest serverRequest, HttpServletResponse response, @RequestBody ConvertClient data)
-            throws IllegalAccessException {
-        if (!Features.UPGRADE_PUBLIC_CLIENT.isActive()) {
-            throw new IllegalAccessException("Feature UPGRADE_PUBLIC_CLIENT is disabled");
-        }
-
+            throws IllegalAccessException {        
         isAdmin(serverRequest, response);
         data = validateClientConversion(serverRequest, response, data);
         if (data.isClientNotFound() || data.isAlreadyMember() || data.isGroupIdNotFound()) {
@@ -1144,9 +1143,6 @@ public class AdminController extends BaseController {
     @RequestMapping(value = "/move-client.json", method = RequestMethod.POST)
     public @ResponseBody ConvertClient moveClient(HttpServletRequest serverRequest, HttpServletResponse response, @RequestBody ConvertClient data)
             throws IllegalAccessException {
-        if (!Features.MOVE_CLIENT.isActive()) {
-            throw new IllegalAccessException("Feature UPGRADE_PUBLIC_CLIENT is disabled");
-        }
         isAdmin(serverRequest, response);
         data = validateClientConversion(serverRequest, response, data);
         if (data.isClientNotFound() || !data.isAlreadyMember() || data.isGroupIdNotFound() || data.isClientDeactivated()) {

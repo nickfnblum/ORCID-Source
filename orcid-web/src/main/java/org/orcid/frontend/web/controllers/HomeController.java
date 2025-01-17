@@ -23,13 +23,13 @@ import org.orcid.core.oauth.OrcidProfileUserDetails;
 import org.orcid.core.security.OrcidWebRole;
 import org.orcid.core.stats.StatisticsManager;
 import org.orcid.core.togglz.Features;
-import org.orcid.core.utils.OrcidStringUtils;
 import org.orcid.core.utils.UTF8Control;
 import org.orcid.jaxb.model.common.AvailableLocales;
 import org.orcid.persistence.jpa.entities.ProfileEntity;
 import org.orcid.pojo.PublicRecordPersonDetails;
 import org.orcid.pojo.UserStatus;
 import org.orcid.pojo.ajaxForm.PojoUtil;
+import org.orcid.utils.OrcidStringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -287,12 +287,7 @@ public class HomeController extends BaseController {
     }
     
     protected String getSearchBaseUrl() {
-        String pubBaseUri = orcidUrlManager.getPubBaseUrl();
-        if(Features.HTTPS_IDS.isActive()) {
-            return pubBaseUri + "/v3.0/search/";
-        } else {
-            return pubBaseUri + "/v1.2/search/orcid-bio/";
-        }          
+        return orcidUrlManager.getPubBaseUrl() + "/v3.0/search/";                 
     }
     
     class ConfigDetails {
