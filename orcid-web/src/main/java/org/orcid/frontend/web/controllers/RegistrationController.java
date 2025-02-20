@@ -1,6 +1,11 @@
 package org.orcid.frontend.web.controllers;
 
 import java.io.UnsupportedEncodingException;
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeFormatterBuilder;
+import java.time.format.DateTimeParseException;
+import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
@@ -14,7 +19,9 @@ import javax.servlet.http.HttpServletRequest;
 import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.codec.binary.Base64;
+import org.apache.commons.lang.StringUtils;
 import org.jasypt.exceptions.EncryptionOperationNotPossibleException;
+import org.orcid.core.common.manager.EventManager;
 import org.orcid.core.constants.EmailConstants;
 import org.orcid.core.constants.OrcidOauth2Constants;
 import org.orcid.core.manager.EncryptionManager;
@@ -27,25 +34,28 @@ import org.orcid.core.manager.v3.read_only.EmailManagerReadOnly;
 import org.orcid.core.manager.v3.read_only.RecordNameManagerReadOnly;
 import org.orcid.core.profile.history.ProfileHistoryEventType;
 import org.orcid.core.security.OrcidUserDetailsService;
+import org.orcid.core.togglz.Features;
 import org.orcid.core.utils.OrcidRequestUtil;
-import org.orcid.core.utils.OrcidStringUtils;
 import org.orcid.frontend.email.RecordEmailSender;
 import org.orcid.frontend.spring.ShibbolethAjaxAuthenticationSuccessHandler;
 import org.orcid.frontend.spring.SocialAjaxAuthenticationSuccessHandler;
 import org.orcid.frontend.spring.web.social.config.SocialSignInUtils;
 import org.orcid.frontend.web.controllers.helper.OauthHelper;
-import org.orcid.frontend.web.controllers.helper.SearchOrcidSolrCriteria;
 import org.orcid.frontend.web.util.RecaptchaVerifier;
 import org.orcid.jaxb.model.common.AvailableLocales;
 import org.orcid.jaxb.model.message.CreationMethod;
 import org.orcid.jaxb.model.v3.release.common.Visibility;
-import org.orcid.jaxb.model.v3.release.search.Search;
+import org.orcid.jaxb.model.v3.release.record.AffiliationType;
 import org.orcid.persistence.constants.SendEmailFrequency;
+import org.orcid.persistence.jpa.entities.EventType;
 import org.orcid.pojo.Redirect;
+import org.orcid.pojo.ajaxForm.AffiliationForm;
+import org.orcid.pojo.ajaxForm.Date;
 import org.orcid.pojo.ajaxForm.PojoUtil;
 import org.orcid.pojo.ajaxForm.Registration;
 import org.orcid.pojo.ajaxForm.RequestInfoForm;
 import org.orcid.pojo.ajaxForm.Text;
+import org.orcid.utils.OrcidStringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -129,6 +139,9 @@ public class RegistrationController extends BaseController {
 
     @Resource
     private SocialSignInUtils socialSignInUtils;
+
+    @Resource
+    private EventManager eventManager;
 
     @RequestMapping(value = "/register.json", method = RequestMethod.GET)
     public @ResponseBody Registration getRegister(HttpServletRequest request, HttpServletResponse response) {
@@ -275,6 +288,9 @@ public class RegistrationController extends BaseController {
             Locale locale = RequestContextUtils.getLocale(request);
             // Ip
             String ip = OrcidRequestUtil.getIpAddress(request);
+            if (Features.EVENTS.isActive()) {
+                eventManager.createEvent(EventType.NEW_REGISTRATION, request);
+            }
             createMinimalRegistrationAndLogUserIn(request, response, reg, usedCaptcha, locale, ip);
         } catch (Exception e) {
             LOGGER.error("Error registering a new user", e);
@@ -312,6 +328,28 @@ public class RegistrationController extends BaseController {
         regEmailValidate(request, reg, false, false);
         registerTermsOfUseValidate(reg);
 
+        if (reg.getAffiliationForm() != null) {
+            AffiliationForm affiliationForm = reg.getAffiliationForm();
+            if (!AffiliationType.EMPLOYMENT.equals(AffiliationType.fromValue(affiliationForm.getAffiliationType().getValue()))) {
+                setError(affiliationForm.getAffiliationType(), "Invalid affiliation type");
+            }
+            if (affiliationForm.getDepartmentName() != null) {
+                if (affiliationForm.getDepartmentName().getValue() != null && affiliationForm.getDepartmentName().getValue().trim().length() > 1000) {
+                    setError(affiliationForm.getDepartmentName(), "common.length_less_1000");
+                }
+            }
+            if (affiliationForm.getRoleTitle() != null) {
+                if (!PojoUtil.isEmpty(affiliationForm.getRoleTitle()) && affiliationForm.getRoleTitle().getValue().trim().length() > 1000) {
+                    setError(affiliationForm.getRoleTitle(), "common.length_less_1000");
+                }
+            }
+            if (affiliationForm.getStartDate() != null) {
+                if(!validDate(affiliationForm.getStartDate())) {
+                    setError(affiliationForm.getStartDate(), "common.dates.invalid");
+                }
+            }
+        }
+
         copyErrors(reg.getActivitiesVisibilityDefault(), reg);
         copyErrors(reg.getEmailConfirm(), reg);
         copyErrors(reg.getEmail(), reg);
@@ -319,6 +357,9 @@ public class RegistrationController extends BaseController {
         copyErrors(reg.getPassword(), reg);
         copyErrors(reg.getPasswordConfirm(), reg);
         copyErrors(reg.getTermsOfUse(), reg);
+        if(reg.getAffiliationForm() != null && reg.getAffiliationForm().getStartDate() != null) {
+            copyErrors(reg.getAffiliationForm().getStartDate(), reg);
+        }
 
         additionalEmailsValidateOnRegister(request, reg);
         for (Text emailAdditional : reg.getEmailsAdditional()) {
@@ -395,7 +436,7 @@ public class RegistrationController extends BaseController {
             return reg;
         }
 
-        if (emailManager.emailExists(emailAddress)) {
+        if (!reg.isReactivation() && emailManager.emailExists(emailAddress)) {
             String orcid = emailManager.findOrcidIdByEmail(emailAddress);
 
             if (profileEntityManager.isDeactivated(orcid)) {
@@ -409,11 +450,7 @@ public class RegistrationController extends BaseController {
             }
 
             if (!emailManager.isAutoDeprecateEnableForEmail(emailAddress)) {
-                // If the email is not eligible for auto deprecate, we
-                // should show an email duplicated exception
-                String resendUrl = createResendClaimUrl(emailAddress, request);
-                String message = getVerifyUnclaimedMessage(emailAddress, resendUrl);
-                reg.getEmail().getErrors().add(message);
+                reg.getEmail().getErrors().add("orcid.frontend.verify.unclaimed_email");
                 return reg;
             } else {
                 LOGGER.info("Email " + emailAddress + " belongs to a unclaimed record and can be auto deprecated");
@@ -507,24 +544,16 @@ public class RegistrationController extends BaseController {
         }       
 
         return new ModelAndView(redirect);
-    }
-
-    private Search findPotentialDuplicatesByFirstNameLastName(String firstName, String lastName) {
-        LOGGER.debug("About to search for potential duplicates during registration for first name={}, last name={}", firstName, lastName);
-        SearchOrcidSolrCriteria queryForm = new SearchOrcidSolrCriteria();
-        queryForm.setGivenName(firstName);
-        queryForm.setFamilyName(lastName);
-        Search visibleProfiles = orcidSearchManager.findOrcidsByQuery(queryForm.deriveQueryString(), DUP_SEARCH_START, DUP_SEARCH_ROWS);
-        LOGGER.debug("Found {} potential duplicates during registration for first name={}, last name={}",
-                new Object[] { visibleProfiles.getNumFound(), firstName, lastName });
-        return visibleProfiles;
-    }
+    }    
 
     private void createMinimalRegistrationAndLogUserIn(HttpServletRequest request, HttpServletResponse response, Registration registration,
             boolean usedCaptchaVerification, Locale locale, String ip) {
         String unencryptedPassword = registration.getPassword().getValue();
         String orcidId = createMinimalRegistration(request, registration, usedCaptchaVerification, locale, ip);
         logUserIn(request, response, orcidId, unencryptedPassword);
+        if (registration.getAffiliationForm() != null) {
+            createAffiliation(registration, orcidId);
+        }
     }
 
     public void logUserIn(HttpServletRequest request, HttpServletResponse response, String orcidId, String password) {
@@ -556,6 +585,10 @@ public class RegistrationController extends BaseController {
         return newUserOrcid;
     }
 
+    private void createAffiliation(Registration registration, String newUserOrcid) {
+        registrationManager.createAffiliation(registration, newUserOrcid);
+    }
+    
     private void processProfileHistoryEvents(Registration registration, String newUserOrcid) {
         // t&cs must be accepted but check just in case!
         if (registration.getTermsOfUse().getValue()) {
@@ -570,6 +603,45 @@ public class RegistrationController extends BaseController {
         if (Visibility.PUBLIC.equals(registration.getActivitiesVisibilityDefault().getVisibility())) {
             profileHistoryEventManager.recordEvent(ProfileHistoryEventType.SET_DEFAULT_VIS_TO_PUBLIC, newUserOrcid);
         }
+    }
+
+    protected boolean validDate(Date date) {
+        DateTimeFormatter[] formatters = {
+                new DateTimeFormatterBuilder().appendPattern("yyyy").parseDefaulting(ChronoField.MONTH_OF_YEAR, 1).parseDefaulting(ChronoField.DAY_OF_MONTH, 1)
+                        .toFormatter(),
+                new DateTimeFormatterBuilder().appendPattern("yyyyMM").parseDefaulting(ChronoField.DAY_OF_MONTH, 1).toFormatter(),
+                new DateTimeFormatterBuilder().appendPattern("yyyyMMdd").parseStrict().toFormatter() };
+        String dateString = date.getYear();        
+        
+        // If year is blank and month or day is not, then it is invalid
+        if (StringUtils.isBlank(date.getYear())) {
+            if (!StringUtils.isBlank(date.getMonth()) || !StringUtils.isBlank(date.getDay())) {
+                return false;
+            }
+        } else if (StringUtils.isBlank(date.getMonth())) {
+            // If the month is empty and day is not empty, then it is invalid
+            if (!StringUtils.isBlank(date.getDay())) {
+                return false;
+            }
+        } else {
+            dateString += StringUtils.leftPad(date.getMonth(), 2, '0');
+            if (!StringUtils.isBlank(date.getDay())) {
+                dateString += StringUtils.leftPad(date.getDay(), 2, '0');
+            }
+        }
+
+        if(StringUtils.isBlank(dateString)) {
+            return true;
+        } else {
+            for (DateTimeFormatter formatter : formatters) {
+                try {
+                    LocalDate.parse(dateString, formatter);
+                    return true;
+                } catch (DateTimeParseException e) {                    
+                }
+            }
+        } 
+        return false;
     }
 
 }

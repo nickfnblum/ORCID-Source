@@ -13,6 +13,7 @@ public class OrcidOauth2Constants {
     public static final String GRANT_TYPE_CLIENT_CREDENTIALS = "client_credentials";
     public static final String DATE_CREATED = "date_created";
     public static final String CLIENT_ID = "client_id";
+    public static final String IS_OBO_TOKEN = "is_obo_token";
     public static final String ORCID = "orcid";
     public static final String NAME = "name";
     public static final String CLIENT_ID_PARAM = "client_id";
@@ -58,6 +59,7 @@ public class OrcidOauth2Constants {
     public static final String IETF_EXCHANGE_SUBJECT_TOKEN = "subject_token";
     public static final String IETF_EXCHANGE_SUBJECT_TOKEN_TYPE = "subject_token_type";
     public static final String IETF_EXCHANGE_REQUESTED_TOKEN_TYPE = "requested_token_type";
+    public static final String TOKEN_DISABLED = "token_disabled";
     
     public static final String CODE_RESPONSE_TYPE = "code";
     

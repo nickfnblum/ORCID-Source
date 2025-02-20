@@ -16,7 +16,6 @@ import org.apache.commons.lang.StringUtils;
 import org.orcid.core.constants.OrcidOauth2Constants;
 import org.orcid.core.exception.OrcidInvalidScopeException;
 import org.orcid.core.locale.LocaleManager;
-import org.orcid.core.manager.EncryptionManager;
 import org.orcid.core.oauth.OAuthError;
 import org.orcid.core.oauth.OAuthErrorUtils;
 import org.orcid.core.utils.JsonUtils;
@@ -26,6 +25,7 @@ import org.orcid.persistence.dao.OrcidOauth2AuthoriziationCodeDetailDao;
 import org.orcid.persistence.dao.ProfileLastModifiedDao;
 import org.orcid.persistence.jpa.entities.IndexingStatus;
 import org.orcid.persistence.jpa.entities.OrcidOauth2AuthoriziationCodeDetail;
+import org.orcid.persistence.jpa.entities.OrcidOauth2TokenDetail;
 import org.orcid.pojo.ajaxForm.PojoUtil;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -62,10 +62,7 @@ public class OrcidClientCredentialEndPointDelegatorImpl extends AbstractEndpoint
     private ProfileLastModifiedDao profileLastModifiedDao;
     
     @Resource
-    private RedisClient redisClient;
-    
-    @Resource
-    private EncryptionManager encryptionManager;
+    private RedisClient redisClient;    
     
     @Value("${org.orcid.core.utils.cache.redis.enabled:true}") 
     private boolean isTokenCacheEnabled;
@@ -166,8 +163,11 @@ public class OrcidClientCredentialEndPointDelegatorImpl extends AbstractEndpoint
                 }                
             }
             
+            // Do not put the token in the cache if the token is disabled
+            if(token.getAdditionalInformation() != null && !token.getAdditionalInformation().containsKey(OrcidOauth2Constants.TOKEN_DISABLED)) {
+                setToCache(client.getName(), token);
+            }
             removeMetadataFromToken(token);
-            setToCache(client.getName(), token);
             return getResponse(token);
         } catch (InvalidGrantException e){ //this needs to be caught here so the transaction doesn't roll back
             OAuthError error = OAuthErrorUtils.getOAuthError(e);
@@ -192,6 +192,9 @@ public class OrcidClientCredentialEndPointDelegatorImpl extends AbstractEndpoint
                 tokenData.put(OrcidOauth2Constants.CLIENT_ID, clientId);
                 tokenData.put(OrcidOauth2Constants.RESOURCE_IDS, OrcidOauth2Constants.ORCID);
                 tokenData.put(OrcidOauth2Constants.APPROVED, Boolean.TRUE.toString());
+                if(accessToken.getAdditionalInformation().containsKey(OrcidOauth2Constants.IS_OBO_TOKEN)) {
+                    tokenData.put(OrcidOauth2Constants.IS_OBO_TOKEN, Boolean.TRUE.toString());
+                }
                 redisClient.set(tokenValue, JsonUtils.convertToJsonString(tokenData));
             } catch(Exception e) {
                 LOGGER.info("Unable to set token in Redis cache", e);
@@ -311,6 +314,8 @@ public class OrcidClientCredentialEndPointDelegatorImpl extends AbstractEndpoint
                 accessToken.getAdditionalInformation().remove(OrcidOauth2Constants.DATE_CREATED);
             if(accessToken.getAdditionalInformation().containsKey(OrcidOauth2Constants.TOKEN_ID))
                 accessToken.getAdditionalInformation().remove(OrcidOauth2Constants.TOKEN_ID);
+            if(accessToken.getAdditionalInformation().containsKey(OrcidOauth2Constants.TOKEN_DISABLED))
+                accessToken.getAdditionalInformation().remove(OrcidOauth2Constants.TOKEN_DISABLED);
         }
     }
     

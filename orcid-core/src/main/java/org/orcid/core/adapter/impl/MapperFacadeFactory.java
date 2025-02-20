@@ -110,7 +110,7 @@ import org.orcid.persistence.jpa.entities.SourceAwareEntity;
 import org.orcid.persistence.jpa.entities.StartDateEntity;
 import org.orcid.persistence.jpa.entities.WorkEntity;
 import org.orcid.pojo.ajaxForm.PojoUtil;
-import org.orcid.core.utils.OrcidStringUtils;
+import org.orcid.utils.OrcidStringUtils;
 import org.springframework.beans.factory.FactoryBean;
 
 import ma.glasnost.orika.CustomMapper;
@@ -940,6 +940,13 @@ public class MapperFacadeFactory implements FactoryBean<MapperFacade> {
                 b.setSubjectTranslatedNameLanguageCode((a.getSubjectName() == null || a.getSubjectName().getTranslatedTitle() == null) ? null
                         : a.getSubjectName().getTranslatedTitle().getLanguageCode());
                 b.setSubjectContainerName(a.getSubjectContainerName() == null ? null : a.getSubjectContainerName().getContent());
+                if(WorkType.DISSERTATION.equals(a.getSubjectType())) {
+                    b.setSubjectType(org.orcid.jaxb.model.common.WorkType.DISSERTATION_THESIS.name());
+                } else {
+                    if(a.getSubjectType() != null) {
+                        b.setSubjectType(a.getSubjectType().name());
+                    }
+                }
             }
         });
 
@@ -1275,7 +1282,14 @@ public class MapperFacadeFactory implements FactoryBean<MapperFacade> {
     private WorkType getWorkType(String name) {
         if (org.orcid.jaxb.model.common.WorkType.SOFTWARE.name().equals(name) || org.orcid.jaxb.model.common.WorkType.PREPRINT.name().equals(name)
                 || org.orcid.jaxb.model.common.WorkType.PHYSICAL_OBJECT.name().equals(name) || org.orcid.jaxb.model.common.WorkType.ANNOTATION.name().equals(name)
-                || org.orcid.jaxb.model.common.WorkType.DATA_MANAGEMENT_PLAN.name().equals(name)) {
+                || org.orcid.jaxb.model.common.WorkType.DATA_MANAGEMENT_PLAN.name().equals(name) || org.orcid.jaxb.model.common.WorkType.CONFERENCE_OUTPUT.name().equals(name)
+                || org.orcid.jaxb.model.common.WorkType.CONFERENCE_PRESENTATION.name().equals(name) || org.orcid.jaxb.model.common.WorkType.CONFERENCE_PROCEEDINGS.name().equals(name)
+                || org.orcid.jaxb.model.common.WorkType.TRANSCRIPTION.name().equals(name) || org.orcid.jaxb.model.common.WorkType.BLOG_POST.name().equals(name)
+                || org.orcid.jaxb.model.common.WorkType.DESIGN.name().equals(name) || org.orcid.jaxb.model.common.WorkType.IMAGE.name().equals(name)
+                || org.orcid.jaxb.model.common.WorkType.MOVING_IMAGE.name().equals(name) || org.orcid.jaxb.model.common.WorkType.MUSICAL_COMPOSITION.name().equals(name)
+                || org.orcid.jaxb.model.common.WorkType.SOUND.name().equals(name) || org.orcid.jaxb.model.common.WorkType.CARTOGRAPHIC_MATERIAL.name().equals(name)
+                || org.orcid.jaxb.model.common.WorkType.CLINICAL_STUDY.name().equals(name) || org.orcid.jaxb.model.common.WorkType.LEARNING_OBJECT.name().equals(name)
+                || org.orcid.jaxb.model.common.WorkType.PUBLIC_SPEECH.name().equals(name)) {
             return WorkType.OTHER;
         }
 

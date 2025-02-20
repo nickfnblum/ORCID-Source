@@ -16,7 +16,10 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.codec.binary.Base64;
 import org.apache.commons.lang.StringUtils;
+import org.codehaus.jettison.json.JSONException;
+import org.codehaus.jettison.json.JSONObject;
 import org.jasypt.exceptions.EncryptionOperationNotPossibleException;
+import org.orcid.core.adapter.impl.MapperFacadeFactory;
 import org.orcid.core.constants.EmailConstants;
 import org.orcid.core.manager.AdminManager;
 import org.orcid.core.manager.EncryptionManager;
@@ -24,16 +27,14 @@ import org.orcid.core.manager.PreferenceManager;
 import org.orcid.core.manager.ProfileEntityCacheManager;
 import org.orcid.core.manager.TwoFactorAuthenticationManager;
 import org.orcid.core.manager.UserConnectionManager;
-import org.orcid.core.manager.v3.AddressManager;
-import org.orcid.core.manager.v3.BiographyManager;
-import org.orcid.core.manager.v3.GivenPermissionToManager;
-import org.orcid.core.manager.v3.RecordNameManager;
+import org.orcid.core.manager.v3.*;
+import org.orcid.core.manager.v3.read_only.ProfileEmailDomainManagerReadOnly;
 import org.orcid.core.manager.v3.read_only.EmailManagerReadOnly;
 import org.orcid.core.manager.v3.read_only.GivenPermissionToManagerReadOnly;
 import org.orcid.core.manager.v3.read_only.ProfileEntityManagerReadOnly;
 import org.orcid.core.manager.v3.read_only.RecordNameManagerReadOnly;
+import org.orcid.core.togglz.Features;
 import org.orcid.core.utils.JsonUtils;
-import org.orcid.core.utils.OrcidStringUtils;
 import org.orcid.core.utils.v3.OrcidIdentifierUtils;
 import org.orcid.frontend.email.RecordEmailSender;
 import org.orcid.frontend.web.util.CommonPasswords;
@@ -43,6 +44,7 @@ import org.orcid.jaxb.model.v3.release.record.Biography;
 import org.orcid.jaxb.model.v3.release.record.Emails;
 import org.orcid.jaxb.model.v3.release.record.Name;
 import org.orcid.persistence.jpa.entities.EmailEntity;
+import org.orcid.persistence.jpa.entities.ProfileEmailDomainEntity;
 import org.orcid.persistence.jpa.entities.ProfileEntity;
 import org.orcid.persistence.jpa.entities.UserconnectionEntity;
 import org.orcid.pojo.AddEmail;
@@ -53,18 +55,11 @@ import org.orcid.pojo.DeprecateProfile;
 import org.orcid.pojo.EmailFrequencyOptions;
 import org.orcid.pojo.ManageDelegate;
 import org.orcid.pojo.ManageSocialAccount;
-import org.orcid.pojo.ajaxForm.AddressForm;
-import org.orcid.pojo.ajaxForm.AddressesForm;
-import org.orcid.pojo.ajaxForm.BiographyForm;
-import org.orcid.pojo.ajaxForm.EditEmail;
-import org.orcid.pojo.ajaxForm.Email;
-import org.orcid.pojo.ajaxForm.Errors;
-import org.orcid.pojo.ajaxForm.NamesForm;
-import org.orcid.pojo.ajaxForm.OtherNamesForm;
-import org.orcid.pojo.ajaxForm.PojoUtil;
-import org.orcid.pojo.ajaxForm.Text;
-import org.orcid.pojo.ajaxForm.Visibility;
+import org.orcid.pojo.ajaxForm.*;
+import org.orcid.utils.OrcidStringUtils;
 import org.orcid.utils.alerting.SlackManager;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.stereotype.Controller;
 import org.springframework.validation.MapBindingResult;
 import org.springframework.validation.ObjectError;
@@ -99,8 +94,11 @@ public class ManageProfileController extends BaseWorkspaceController {
     @Resource
     private GivenPermissionToManager givenPermissionToManager;
 
-   @Resource(name = "emailManagerReadOnlyV3")
-    private EmailManagerReadOnly emailManagerReadOnly;
+    @Resource(name = "profileEmailDomainManagerReadOnly")
+    private ProfileEmailDomainManagerReadOnly profileEmailDomainManagerReadOnly;
+
+    @Resource(name = "profileEmailDomainManager")
+    private ProfileEmailDomainManager profileEmailDomainManager;
     
     @Resource
     private UserConnectionManager userConnectionManager;
@@ -137,7 +135,7 @@ public class ManageProfileController extends BaseWorkspaceController {
     
     @Resource
     private SlackManager slackManager;
-    
+
     @RequestMapping
     public ModelAndView manageProfile() {
         return new ModelAndView("manage");
@@ -496,16 +494,18 @@ public class ManageProfileController extends BaseWorkspaceController {
     @RequestMapping(value = "/verifyEmail.json", method = RequestMethod.GET)
     public @ResponseBody Errors verifyEmail(HttpServletRequest request, @RequestParam("email") String email) {  
     	String currentUserOrcid = getCurrentUserOrcid();
-        String primaryEmail = emailManager.findPrimaryEmail(currentUserOrcid).getEmail();
-        if (primaryEmail.equals(email))
-            request.getSession().setAttribute(EmailConstants.CHECK_EMAIL_VALIDATED, false);
-
-        String emailOwner = emailManagerReadOnly.findOrcidIdByEmail(email);
+    	
+    	String emailOwner = emailManagerReadOnly.findOrcidIdByEmail(email);
         if(!currentUserOrcid.equals(emailOwner)) {
-        	throw new IllegalArgumentException("Invalid email address provided");
+                throw new IllegalArgumentException("Invalid email address provided");
+        }
+    	
+        boolean isPrimaryEmail = emailManagerReadOnly.isPrimaryEmail(currentUserOrcid, email);
+        if (isPrimaryEmail) {
+            request.getSession().setAttribute(EmailConstants.CHECK_EMAIL_VALIDATED, false);        
         }
         
-        recordEmailSender.sendVerificationEmail(currentUserOrcid, email);
+        recordEmailSender.sendVerificationEmail(currentUserOrcid, email, isPrimaryEmail);
         return new Errors();
     }
 
@@ -516,26 +516,46 @@ public class ManageProfileController extends BaseWorkspaceController {
     }
 
     @RequestMapping(value = "/send-deactivate-account.json", method = RequestMethod.POST)
-    public @ResponseBody String startDeactivateOrcidAccount(HttpServletRequest request) {
+    public @ResponseBody String startDeactivateOrcidAccount(HttpServletRequest request) throws JSONException {
         String currentUserOrcid = getCurrentUserOrcid();
         recordEmailSender.sendOrcidDeactivateEmail(currentUserOrcid);
-        return emailManager.findPrimaryEmail(currentUserOrcid).getEmail();
+        String primaryEmail = emailManager.findPrimaryEmail(currentUserOrcid).getEmail();
+        JSONObject response = new JSONObject();
+        response.put("email", primaryEmail);
+        return response.toString();
     }
 
     @RequestMapping(value = "/emails.json", method = RequestMethod.GET)
     public @ResponseBody org.orcid.pojo.ajaxForm.Emails getEmails(HttpServletRequest request) {                                
-        Emails v2Emails = emailManager.getEmails(getCurrentUserOrcid());       
-        return org.orcid.pojo.ajaxForm.Emails.valueOf(v2Emails);
+        Emails v2Emails = emailManager.getEmails(getCurrentUserOrcid());
+
+        List<ProfileEmailDomainEntity> emailDomains = null;
+        if (Features.EMAIL_DOMAINS.isActive()) {
+            emailDomains = profileEmailDomainManagerReadOnly.getEmailDomains(getCurrentUserOrcid());
+        }
+        org.orcid.pojo.ajaxForm.Emails emails = org.orcid.pojo.ajaxForm.Emails.valueOf(v2Emails, emailDomains);
+        // Old emails are missing the source name and id -- assign the user as the source
+        if (emails.getEmails() != null) {
+            for (org.orcid.pojo.ajaxForm.Email email : emails.getEmails()) {
+                if (email.getSource() == null && email.getSourceName() == null) {
+                    String orcid = getCurrentUserOrcid();
+                    String displayName = getPersonDetails(orcid, true).getDisplayName();
+                    email.setSource(orcid);
+                    email.setSourceName(displayName);
+                }
+            }
+        }
+        return emails;
     }
 
     @RequestMapping(value = "/emails.json", method = RequestMethod.POST)
-    public @ResponseBody org.orcid.pojo.ajaxForm.Emails setEmails(HttpServletRequest request,  @RequestBody org.orcid.pojo.ajaxForm.Emails newEmailSet) {                                
-        Emails oldEmailSet = emailManager.getEmails(getCurrentUserOrcid());  
+    public @ResponseBody org.orcid.pojo.ajaxForm.Emails setEmails(HttpServletRequest request,  @RequestBody org.orcid.pojo.ajaxForm.Emails newEmailSet) {
+        Emails oldEmailSet = emailManager.getEmails(getCurrentUserOrcid());
         List<org.orcid.jaxb.model.v3.release.record.Email> deletedEmails = new ArrayList<org.orcid.jaxb.model.v3.release.record.Email>();
         List<Email> newEmails = new ArrayList<Email>();
         String orcid = getCurrentUserOrcid();
         List<String> errors = new ArrayList<String>();
-        
+
         for (org.orcid.pojo.ajaxForm.Email newJsonEmail : newEmailSet.getEmails()) {
             boolean isNewEmail = true;
             for (org.orcid.jaxb.model.v3.release.record.Email oldJsonEmail: oldEmailSet.getEmails()) {
@@ -592,7 +612,12 @@ public class ManageProfileController extends BaseWorkspaceController {
         }
         
         Emails updatedSet = emailManager.getEmails(getCurrentUserOrcid());
-        org.orcid.pojo.ajaxForm.Emails emailsResponse = org.orcid.pojo.ajaxForm.Emails.valueOf(updatedSet);
+        List<ProfileEmailDomainEntity> updatedDomains = null;
+        if (Features.EMAIL_DOMAINS.isActive()) {
+            profileEmailDomainManager.updateEmailDomains(orcid, newEmailSet);
+            updatedDomains = profileEmailDomainManagerReadOnly.getEmailDomains(getCurrentUserOrcid());
+        }
+        org.orcid.pojo.ajaxForm.Emails emailsResponse = org.orcid.pojo.ajaxForm.Emails.valueOf(updatedSet, updatedDomains);
         emailsResponse.setErrors(errors);
         return emailsResponse;
     }
@@ -640,9 +665,8 @@ public class ManageProfileController extends BaseWorkspaceController {
             Map<String, String> keys = emailManager.addEmail(currentUserOrcid, email.toV3Email());
             if(!keys.isEmpty()) {
                 request.getSession().setAttribute(EmailConstants.CHECK_EMAIL_VALIDATED, false);
-                recordEmailSender.sendEmailAddressChangedNotification(currentUserOrcid, keys.get("new"), keys.get("old"));
             }
-            recordEmailSender.sendVerificationEmail(currentUserOrcid, OrcidStringUtils.filterEmailAddress(email.getValue()));
+            recordEmailSender.sendVerificationEmail(currentUserOrcid, OrcidStringUtils.filterEmailAddress(email.getValue()), email.isPrimary());
         } else {
             email.setErrors(errors);
         }
@@ -730,15 +754,14 @@ public class ManageProfileController extends BaseWorkspaceController {
     public @ResponseBody org.orcid.pojo.ajaxForm.Email setPrimary(HttpServletRequest request, @RequestBody org.orcid.pojo.ajaxForm.Email email) {
         String orcid = getCurrentUserOrcid();
         String owner = emailManager.findOrcidIdByEmail(email.getValue());
-        if(orcid.equals(owner)) {            
+        if(orcid.equals(owner)) {
             // Sets the given email as primary
             Map<String, String> keys = emailManager.setPrimary(orcid, email.getValue().trim(), request);
             if(keys.containsKey("new")) {
                 String newPrimary = keys.get("new");
                 String oldPrimary = keys.get("old");
-                recordEmailSender.sendEmailAddressChangedNotification(orcid, newPrimary, oldPrimary);
                 if(keys.containsKey("sendVerification")) {
-                    recordEmailSender.sendVerificationEmail(orcid, newPrimary);
+                    recordEmailSender.sendVerificationEmail(orcid, newPrimary, true);
                     request.getSession().setAttribute(EmailConstants.CHECK_EMAIL_VALIDATED, false);
                 }
             }
@@ -782,13 +805,9 @@ public class ManageProfileController extends BaseWorkspaceController {
             String original = editEmail.getOriginal();
             String edited = editEmail.getEdited();
             Map<String, String> keys = emailManager.editEmail(orcid, original, edited, request);
-            if(keys.containsKey("new")) {
-                String newPrimary = keys.get("new");
-                String oldPrimary = keys.get("old");
-                recordEmailSender.sendEmailAddressChangedNotification(orcid, newPrimary, oldPrimary);                
-            }
             String verifyAddress = keys.get("verifyAddress");
-            recordEmailSender.sendVerificationEmail(orcid, verifyAddress);
+            boolean isPrimaryEmail = keys.containsKey("new") ? true : false;
+            recordEmailSender.sendVerificationEmail(orcid, verifyAddress, isPrimaryEmail);
         } else {
             editEmail.setErrors(errors);
         }
@@ -979,7 +998,7 @@ public class ManageProfileController extends BaseWorkspaceController {
             if (params.containsKey(AdminManager.MANAGED_USER_PARAM) && params.containsKey(AdminManager.TRUSTED_USER_PARAM)) {
                 String managedOrcid = params.get(AdminManager.MANAGED_USER_PARAM);
                 String trustedOrcid = params.get(AdminManager.TRUSTED_USER_PARAM);
-                // Check if managed user is the same than the logged user
+                // Check if managed user is the same as the logged user
                 if (managedOrcid.equals(getEffectiveUserOrcid())) {
                     // Check if the managed user email is verified, if not,
                     // verify it

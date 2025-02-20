@@ -98,10 +98,12 @@
             </bean>
         </property>
     </bean>
-    
-    <bean id="csrfTokenRepo" class="org.springframework.security.web.csrf.CookieCsrfTokenRepository" factory-method="withHttpOnlyFalse" />
-    	
-    	<sec:http-firewall ref="httpFirewall"/>
+
+	<bean id="csrfTokenRepo" class="org.springframework.security.web.csrf.CookieCsrfTokenRepository" factory-method="withHttpOnlyFalse">
+		<property name="cookieDomain" value="${org.orcid.core.csrf.domain}" />
+	</bean>
+
+	<sec:http-firewall ref="httpFirewall"/>
     	
 	<sec:http pattern="/robots.txt" security="none" create-session="stateless" />
 	<sec:http pattern="/tomcatUp.json" security="none" create-session="stateless" />
@@ -249,6 +251,7 @@
 		<sec:headers>
 			<sec:frame-options policy="SAMEORIGIN" />
 		</sec:headers>
+		<sec:custom-filter position="CORS_FILTER" ref="corsFilterWeb" />
 		<sec:custom-filter position="SWITCH_USER_FILTER" ref="switchUserProcessingFilter" />
 		<sec:intercept-url pattern="/"
 			access="IS_AUTHENTICATED_ANONYMOUSLY" />
@@ -289,6 +292,8 @@
 		<sec:intercept-url pattern="/(\d{4}-){3,}\d{3}[\dX]/affiliationDetails.json(\?.*)?"
 			access="IS_AUTHENTICATED_ANONYMOUSLY" />		
 		<sec:intercept-url pattern="/(\d{4}-){3,}\d{3}[\dX]/affiliationGroups.json(\?.*)?"
+			access="IS_AUTHENTICATED_ANONYMOUSLY" />
+		<sec:intercept-url pattern="/affiliations/disambiguated/name/(.*)?"
 			access="IS_AUTHENTICATED_ANONYMOUSLY" />
 		<sec:intercept-url pattern="/(\d{4}-){3,}\d{3}[\dX]/fundingDetails.json(\?.*)?"
 			access="IS_AUTHENTICATED_ANONYMOUSLY" />				
@@ -419,6 +424,10 @@
         <sec:intercept-url pattern="/sendReactivation.json"
             access="IS_AUTHENTICATED_ANONYMOUSLY" />
         <sec:intercept-url pattern="/countryNamesToCountryCodes.json(\?.*)?"
+            access="IS_AUTHENTICATED_ANONYMOUSLY" />            
+        <sec:intercept-url pattern="/email-domain/find-category(\?.*)?"
+            access="IS_AUTHENTICATED_ANONYMOUSLY" />
+        <sec:intercept-url pattern="/email-domain/find-org(\?.*)?"
             access="IS_AUTHENTICATED_ANONYMOUSLY" />
 		<sec:intercept-url pattern="/developer-tools" 
 			access="ROLE_USER"/>

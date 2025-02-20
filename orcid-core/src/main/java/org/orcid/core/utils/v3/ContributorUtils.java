@@ -11,6 +11,7 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.ehcache.Cache;
+import org.orcid.core.aop.ProfileLastModifiedAspect;
 import org.orcid.core.contributors.roles.credit.CreditRole;
 import org.orcid.core.manager.ClientDetailsEntityCacheManager;
 import org.orcid.core.manager.SourceNameCacheManager;
@@ -25,7 +26,6 @@ import org.orcid.jaxb.model.v3.release.record.Funding;
 import org.orcid.jaxb.model.v3.release.record.FundingContributor;
 import org.orcid.jaxb.model.v3.release.record.Work;
 import org.orcid.jaxb.model.v3.release.record.WorkBulk;
-import org.orcid.persistence.aop.ProfileLastModifiedAspect;
 import org.orcid.persistence.dao.RecordNameDao;
 import org.orcid.persistence.dao.WorkDao;
 import org.orcid.persistence.jpa.entities.ClientDetailsEntity;
@@ -375,19 +375,17 @@ public class ContributorUtils {
 
     public String getAssertionOriginOrcid(String clientSourceId, String orcid, Long putCode, ClientDetailsEntityCacheManager clientDetailsEntityCacheManager, WorkDao workDao) {
         String assertionOriginOrcid = null;
-        if (Features.USER_OBO.isActive()) {
-            ClientDetailsEntity clientSource = clientDetailsEntityCacheManager.retrieve(clientSourceId);
-            if (clientSource.isUserOBOEnabled()) {
-                WorkEntity e = workDao.getWork(orcid, putCode);
+        ClientDetailsEntity clientSource = clientDetailsEntityCacheManager.retrieve(clientSourceId);
+        if (clientSource.isUserOBOEnabled()) {
+            WorkEntity e = workDao.getWork(orcid, putCode);
 
-                String orcidId = null;
-                if (e instanceof OrcidAware) {                    
-                    orcidId = ((OrcidAware) e).getOrcid();
-                }
-                assertionOriginOrcid = orcidId;
+            String orcidId = null;
+            if (e instanceof OrcidAware) {                    
+                orcidId = ((OrcidAware) e).getOrcid();
             }
+            assertionOriginOrcid = orcidId;
         }
-
+        
         return assertionOriginOrcid;
     }
 

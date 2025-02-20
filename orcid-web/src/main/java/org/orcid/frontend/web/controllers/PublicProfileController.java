@@ -1,5 +1,19 @@
 package org.orcid.frontend.web.controllers;
 
+import java.io.UnsupportedEncodingException;
+import java.math.BigDecimal;
+import java.text.NumberFormat;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.stream.IntStream;
+
+import javax.annotation.Resource;
+import javax.servlet.http.HttpServletRequest;
+import javax.servlet.http.HttpServletResponse;
+
 import org.apache.commons.lang3.StringUtils;
 import org.orcid.core.exception.DeactivatedException;
 import org.orcid.core.exception.LockedException;
@@ -15,6 +29,7 @@ import org.orcid.core.manager.v3.read_only.AffiliationsManagerReadOnly;
 import org.orcid.core.manager.v3.read_only.GroupIdRecordManagerReadOnly;
 import org.orcid.core.manager.v3.read_only.PeerReviewManagerReadOnly;
 import org.orcid.core.manager.v3.read_only.PersonalDetailsManagerReadOnly;
+import org.orcid.core.manager.v3.read_only.ProfileEntityManagerReadOnly;
 import org.orcid.core.manager.v3.read_only.ProfileFundingManagerReadOnly;
 import org.orcid.core.manager.v3.read_only.ResearchResourceManagerReadOnly;
 import org.orcid.core.manager.v3.read_only.WorkManagerReadOnly;
@@ -44,6 +59,7 @@ import org.orcid.jaxb.model.v3.release.record.summary.PeerReviewSummary;
 import org.orcid.jaxb.model.v3.release.record.summary.PeerReviews;
 import org.orcid.persistence.jpa.entities.CountryIsoEntity;
 import org.orcid.persistence.jpa.entities.ProfileEntity;
+import org.orcid.persistence.jpa.entities.SourceEntity;
 import org.orcid.pojo.OrgDisambiguated;
 import org.orcid.pojo.PeerReviewMinimizedSummary;
 import org.orcid.pojo.PublicRecordPersonDetails;
@@ -74,19 +90,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseBody;
 import org.springframework.web.servlet.ModelAndView;
 import org.springframework.web.servlet.view.RedirectView;
-
-import javax.annotation.Resource;
-import javax.servlet.http.HttpServletRequest;
-import javax.servlet.http.HttpServletResponse;
-import java.io.UnsupportedEncodingException;
-import java.math.BigDecimal;
-import java.text.NumberFormat;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.stream.IntStream;
 
 @Controller
 public class PublicProfileController extends BaseWorkspaceController {
@@ -147,6 +150,9 @@ public class PublicProfileController extends BaseWorkspaceController {
 
     @Value("${org.orcid.core.work.contributors.ui.max:50}")
     private int maxContributorsForUI;
+    
+    @Resource(name = "profileEntityManagerReadOnlyV3")
+    private ProfileEntityManagerReadOnly profileEntityManagerReadOnly;
 
     public static int ORCID_HASH_LENGTH = 8;
     private static final String PAGE_SIZE_DEFAULT = "50";
@@ -269,8 +275,22 @@ public class PublicProfileController extends BaseWorkspaceController {
 
         // False if it is not reviewed and doesn't have any integration
         if(!profile.isReviewed()) {
-            if (!orcidOauth2TokenService.hasToken(profile.getId(), getLastModifiedTime(profile.getId()))) {
-                return false;
+            String userOrcid = profile.getId();
+            if (!orcidOauth2TokenService.hasToken(userOrcid, getLastModifiedTime(userOrcid))) {
+                // If the user doesn't have any token, check if it was created by member, if so, 
+                // verify if that member pushed any work of affiliation on creation time
+                SourceEntity source = profile.getSource();
+                if(source != null) {                    
+                    // If it was created by a member, verify if it have any activity that belongs to that member
+                    String clientId = source.getSourceClient() == null ? null : source.getSourceClient().getId();
+                    if(profileEntityManagerReadOnly.haveMemberPushedWorksOrAffiliationsToRecord(userOrcid, clientId)) {
+                        return true;
+                    } else {
+                        return false;
+                    }
+                } else {
+                    return false;
+                }                
             } 
         }
         
@@ -409,7 +429,11 @@ public class PublicProfileController extends BaseWorkspaceController {
             fundingGroups.add(fundingGroup);
         }
 
-        fundingGroups.sort(FundingComparators.getInstance(sort, sortAsc));
+        if ("source".equals(sort)) {
+            fundingGroups = new FundingComparators().sortBySource(fundingGroups, sortAsc, orcid);
+        } else {
+            fundingGroups.sort(new FundingComparators().getInstance(sort, sortAsc, orcid));
+        }
         return fundingGroups;
     }
 
@@ -588,7 +612,7 @@ public class PublicProfileController extends BaseWorkspaceController {
     @RequestMapping(value = "/{orcid:(?:\\d{4}-){3,}\\d{3}[\\dX]}/peer-reviews-by-group-id.json", method = RequestMethod.GET)
     public @ResponseBody List<PeerReviewGroup> getPeerReviewsJsonByGroupId(@PathVariable("orcid") String orcid, @RequestParam("groupId") String groupId, @RequestParam("sortAsc") boolean sortAsc) {
         List<PeerReviewGroup> peerReviewGroups = new ArrayList<>();
-        List<PeerReviewSummary> summaries = peerReviewManagerReadOnly.getPeerReviewSummaryListByGroupId(orcid, groupId);
+        List<PeerReviewSummary> summaries = peerReviewManagerReadOnly.getPeerReviewSummaryListByGroupId(orcid, groupId, true);
         PeerReviews peerReviews = peerReviewManagerReadOnly.groupPeerReviews(summaries, false);
         for (org.orcid.jaxb.model.v3.release.record.summary.PeerReviewGroup group : peerReviews.getPeerReviewGroup()) {
             Optional<GroupIdRecord> groupIdRecord = groupIdRecordManagerReadOnly.findByGroupId(group.getPeerReviewGroup().get(0).getPeerReviewSummary().get(0).getGroupId());
