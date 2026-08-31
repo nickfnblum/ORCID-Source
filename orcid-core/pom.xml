@@ -221,7 +221,7 @@
         <dependency>
             <groupId>com.nimbusds</groupId>
             <artifactId>oauth2-oidc-sdk</artifactId>
-            <version>5.36</version>
+            <version>5.64.4</version>
         </dependency>
 
         <!-- Messaging -->
