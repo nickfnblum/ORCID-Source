@@ -1,3 +1,9 @@
+## v3.0.84 - 2026-09-12
+
+[Full Changelog](https://github.com/ORCID/ORCID-Source/compare/v3.0.83...v3.0.84)
+
+- [#7711](https://github.com/ORCID/ORCID-Source/pull/7711): Implemented autocomit for jpabeans and pooled data sources
+
 ## v3.0.83 - 2026-09-11
 
 [Full Changelog](https://github.com/ORCID/ORCID-Source/compare/v3.0.82...v3.0.83)
